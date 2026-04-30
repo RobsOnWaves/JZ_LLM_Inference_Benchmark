@@ -12,6 +12,17 @@ if command -v module >/dev/null 2>&1; then
   fi
 fi
 
+
+# Required variables (normally exported by run_benchmark.sh)
+: "${GPUS_PER_NODE:?GPUS_PER_NODE is required}"
+: "${CPUS_PER_NODE:?CPUS_PER_NODE is required}"
+: "${NODES:?NODES is required}"
+: "${MODEL_PATH:?MODEL_PATH is required}"
+: "${BENCHMARK_FILE:?BENCHMARK_FILE is required}"
+: "${DATASET:?DATASET is required}"
+: "${DATASET_PATH:?DATASET_PATH is required}"
+: "${LAUNCH_FOLDER:?LAUNCH_FOLDER is required}"
+
 # Ray sanity
 export RAY_DISABLE_DOCKER_CPU_WARNING=1
 export RAY_USAGE_STATS_ENABLED=1
