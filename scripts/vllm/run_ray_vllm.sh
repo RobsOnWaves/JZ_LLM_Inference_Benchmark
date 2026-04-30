@@ -14,6 +14,19 @@ if command -v module >/dev/null 2>&1; then
 fi
 
 
+
+if [ -n "${ENVIRONMENT_VLLM:-}" ]; then
+  if [ -f "$ENVIRONMENT_VLLM/bin/activate" ]; then
+    # shellcheck disable=SC1090
+    source "$ENVIRONMENT_VLLM/bin/activate"
+  fi
+fi
+
+if ! command -v ray >/dev/null 2>&1; then
+  echo "ERROR: `ray` command not found. Activate the vLLM environment or set ENVIRONMENT_VLLM correctly." >&2
+  exit 1
+fi
+
 # Required variables (normally exported by run_benchmark.sh)
 : "${GPUS_PER_NODE:?GPUS_PER_NODE is required}"
 : "${CPUS_PER_NODE:?CPUS_PER_NODE is required}"
