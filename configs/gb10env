@@ -1,0 +1,30 @@
+# ENVIRONMENT PATH
+# Update these values to match your Dell GB10 environment.
+ENVIRONMENT_VLLM=/opt/conda/envs/vllm
+SCRIPT_VLLM=scripts/vllm/run_ray_vllm.sh
+
+# ADDITIONAL VARIABLES
+PORT=8000
+BENCHMARK_FILE=/workspace/JZ_LLM_Inference_Benchmark/benchmarks/benchmark_serving.py
+
+# Modules to load for activating the environment.
+# On non-module systems keep MODULES empty.
+MODULES=""
+if [ -n "$MODULES" ]; then
+  module load $MODULES
+fi
+CONDA_PATH="$(conda info --base)/etc/profile.d/conda.sh"
+
+# SERVER SPECIFIC
+SUPCOMPUTER_NAME="Dell GB10"
+PARTITION_NAME="gpu"
+ACCOUNT="local"
+QOS="normal"
+CONSTRAINT="gb10"
+TIME_LIMIT=2:00:00
+GPUS_PER_NODE=1
+CPUS_PER_NODE=20
+VRAM_PER_NODE=128  # Total usable memory in GB on the node
+
+# Set to true to run without Slurm (direct local execution).
+LOCAL_EXECUTION=true
