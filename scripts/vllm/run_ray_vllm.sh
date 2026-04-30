@@ -39,15 +39,19 @@ LOCAL_MODE="${LOCAL_EXECUTION:-false}"
 ########################################
 # 2. Robust InfiniBand detection (IPv4 only)
 ########################################
-IB_IFACE=$(ip -4 -o addr show | awk '{print $2}' | grep -E '^(ib|hsn|sl)' | head -n 1)
+if [[ "$LOCAL_MODE" == "true" ]]; then
+  IB_IFACE="lo"
+else
+  IB_IFACE=$(ip -4 -o addr show | awk '{print $2}' | grep -E '^(ib|hsn|sl)' | head -n 1)
 
-if [ -z "$IB_IFACE" ]; then
-  echo "ERROR: No InfiniBand interface with IPv4 found"
-  ip -4 addr show
-  exit 1
+  if [ -z "$IB_IFACE" ]; then
+    echo "ERROR: No InfiniBand interface with IPv4 found"
+    ip -4 addr show
+    exit 1
+  fi
 fi
 
-IB_IP_CMD="ip -4 addr show $IB_IFACE | awk '/inet / {split(\$2,a,\"/\"); print a[1]}'"
+IB_IP_CMD="ip -4 addr show $IB_IFACE | awk '/inet / {split(\$2,a,"/"); print a[1]}'"
 
 ########################################
 # 3. NCCL (force IB, prevent silent TCP fallback)
