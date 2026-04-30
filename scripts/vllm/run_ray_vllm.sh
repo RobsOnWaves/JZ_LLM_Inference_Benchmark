@@ -1,14 +1,15 @@
 #!/bin/bash
 
 set -euo pipefail
+trap 'echo "[ERROR] run_ray_vllm.sh failed at line $LINENO" >&2' ERR
 
 ########################################
 # 1. Environment
 ########################################
 if command -v module >/dev/null 2>&1; then
-  module purge
+  module purge >/dev/null 2>&1 || true
   if [ -n "${MODULES:-}" ]; then
-    module load $MODULES
+    module load $MODULES >/dev/null 2>&1 || echo "[WARN] module load failed, continuing with current environment" >&2
   fi
 fi
 
