@@ -1,10 +1,22 @@
 #!/bin/bash
+set -euo pipefail
+
+ENV_CONFIG_FILE="${1:-configs/a100env}"
+
+if [[ ! -f "$ENV_CONFIG_FILE" ]]; then
+  echo "Environment config file not found: $ENV_CONFIG_FILE"
+  echo "Usage: $0 [configs/a100env|configs/h100env|configs/gb10env]"
+  exit 1
+fi
+
 set -a  # Automatically export all variables
-source configs/a100env
+source "$ENV_CONFIG_FILE"
 set +a  # Stop automatically exporting
 
 # Load utility functions
 source scripts/utils.sh
+
+LOCAL_EXECUTION="${LOCAL_EXECUTION:-false}"
 
 #######################################################
 # ENVIRONMENT VARIABLES TO CHANGE
@@ -15,7 +27,7 @@ MODELS=("meta-llama/Llama-3.1-8B-Instruct" "meta-llama/Llama-3.1-70B-Instruct" "
 NUMBER_OF_NODES=(4) #You can let 4 Since DP is not working code will regulate number of nodes to use only the right number
 REPEATS=3               # Number of runs per configuration
 #######################################################
-echo $ACCOUNT
+echo "$ACCOUNT"
 GPUS_PER_NODE=$GPUS_PER_NODE
 CPUS_PER_NODE=$CPUS_PER_NODE
 VRAM_PER_NODE=$VRAM_PER_NODE
@@ -43,7 +55,7 @@ for framework in "${FRAMEWORKS[@]}"; do
         MODEL_DIRECTORY=$(get_model_directory "$MODEL_TYPE" "configs/model_type_directories_map.json")
         MODEL_PATH="${MODEL_DIRECTORY}/${model}"
         RAY_PATH="/tmp"
-        mkdir -p $RAY_PATH
+        mkdir -p "$RAY_PATH"
 
         if [ -z "$MODEL_DIRECTORY" ]; then
           echo "Unknown model type '$MODEL_TYPE' or missing directory mapping. Exiting."
@@ -110,7 +122,7 @@ for framework in "${FRAMEWORKS[@]}"; do
             echo "Setting up $LAUNCH_FOLDER"
             mkdir -p "$LAUNCH_FOLDER"
              
-            cp $SCRIPT_VLLM "$LAUNCH_FOLDER"
+            cp "$SCRIPT_VLLM" "$LAUNCH_FOLDER"
             FILE_NAME="${SCRIPT_VLLM##*/}"
             cd "$LAUNCH_FOLDER" || exit 1
             export NODES CPUS_PER_NODE GPUS_PER_NODE TENSOR_PARALLEL PIPELINE_PARALLEL DATA_PARALLEL
@@ -125,10 +137,17 @@ for framework in "${FRAMEWORKS[@]}"; do
             else
               DEPENDENCY=""
             fi
-	    export TMP_DIR=$SCRATCH/TMP
-	    echo "Submit job..."
-            JOB_ID=$(sbatch --parsable \
-            --chdir=$(pwd) \
+            TMP_BASE="${SCRATCH:-${TMPDIR:-/tmp}}"
+            export TMP_DIR="${TMP_BASE}/TMP"
+            mkdir -p "$TMP_DIR"
+            echo "Submit job..."
+            if [[ "$LOCAL_EXECUTION" == "true" ]] || ! command -v sbatch >/dev/null 2>&1; then
+              echo "Running in local mode (no Slurm submission)."
+              JOB_ID="local-${framework}-${dataset}-$(basename "$model")-run-${run_id}"
+              bash "$FILE_NAME" > run-local.out 2>&1
+            else
+              JOB_ID=$(sbatch --parsable \
+            --chdir="$(pwd)" \
             --nodes=$NODES \
             --cpus-per-task=$CPUS_PER_NODE \
             --gres=gpu:$GPUS_PER_NODE \
@@ -142,6 +161,7 @@ for framework in "${FRAMEWORKS[@]}"; do
             --time=$TIME_LIMIT \
             --exclusive \
             $FILE_NAME)
+            fi
 
             echo "Submitted job $JOB_ID for $LAUNCH_FOLDER"
             JOB_IDS+=("$JOB_ID")

@@ -5,8 +5,12 @@ set -euo pipefail
 ########################################
 # 1. Environment
 ########################################
-module purge
-module load $MODULES
+if command -v module >/dev/null 2>&1; then
+  module purge
+  if [ -n "${MODULES:-}" ]; then
+    module load $MODULES
+  fi
+fi
 
 # Ray sanity
 export RAY_DISABLE_DOCKER_CPU_WARNING=1
@@ -18,6 +22,7 @@ export VLLM_USE_RAY_SPANNABLE_POOL=0
 export VLLM_USE_RAY_COMPILED_DAG=0
 export RAY_CGRAPH_get_timeout=1800
 NB_NODES=$NODES
+LOCAL_MODE="${LOCAL_EXECUTION:-false}"
 
 ########################################
 # 2. Robust InfiniBand detection (IPv4 only)
@@ -51,19 +56,25 @@ export NCCL_P2P_DISABLE=0
 # 4. Node discovery
 ########################################
 
-nodes=$(scontrol show hostnames "$SLURM_JOB_NODELIST")
-nodes_array=($nodes)
-head_node=${nodes_array[0]}
-
-# Si on est sur 1 seul nœud, on récupère l'IP directement sans srun
-if [ "$NB_NODES" -eq 1 ]; then
-    head_node_ip=$(eval "$IB_IP_CMD")
+if [[ "$LOCAL_MODE" == "true" ]]; then
+  head_node=$(hostname)
+  head_node_ip="127.0.0.1"
+  export RAY_HEAD_IP="$head_node_ip"
+  export RAY_ADDRESS="$RAY_HEAD_IP:6379"
 else
-    head_node_ip=$(srun --nodes=1 --ntasks=1 -w "$head_node" bash -c "$IB_IP_CMD")
-fi
+  nodes=$(scontrol show hostnames "$SLURM_JOB_NODELIST")
+  nodes_array=($nodes)
+  head_node=${nodes_array[0]}
 
-export RAY_HEAD_IP="$head_node_ip"
-export RAY_ADDRESS="$RAY_HEAD_IP:6379"
+  if [ "$NB_NODES" -eq 1 ]; then
+      head_node_ip=$(eval "$IB_IP_CMD")
+  else
+      head_node_ip=$(srun --nodes=1 --ntasks=1 -w "$head_node" bash -c "$IB_IP_CMD")
+  fi
+
+  export RAY_HEAD_IP="$head_node_ip"
+  export RAY_ADDRESS="$RAY_HEAD_IP:6379"
+fi
 
 ########################################
 # 5. Launch Ray cluster
@@ -71,44 +82,22 @@ export RAY_ADDRESS="$RAY_HEAD_IP:6379"
 ray stop --force || true
 sleep 5
 
-srun --nodes=$NB_NODES \
-     --ntasks=$NB_NODES \
-     --ntasks-per-node=1 \
-     bash -c "
-set -euo pipefail
-local_ip=\$($IB_IP_CMD)
-export RAY_NODE_IP_ADDRESS=\$local_ip
-export VLLM_HOST_IP=\$local_ip
-export HOST_IP=\$local_ip
-
-echo \"[\$(hostname)] Starting Ray on IP: \$local_ip\"
-
-if [ \"\$SLURM_PROCID\" -eq 0 ]; then
-    ray start --head \
-      --node-ip-address=\$local_ip \
-      --port=6379 \
-      --num-cpus=$CPUS_PER_NODE \
-      --num-gpus=$GPUS_PER_NODE \
-      --disable-usage-stats \
-      --block
+if [[ "$LOCAL_MODE" == "true" ]]; then
+  ray start --head \
+    --node-ip-address="$RAY_HEAD_IP" \
+    --port=6379 \
+    --num-cpus=$CPUS_PER_NODE \
+    --num-gpus=$GPUS_PER_NODE \
+    --disable-usage-stats \
+    --block &
 else
-    # Worker Nodes (if scaling > 1)
-    until (echo > /dev/tcp/$RAY_HEAD_IP/6379) >/dev/null 2>&1; do
-      echo \"Waiting for Ray head at $RAY_HEAD_IP...\"
-      sleep 2
-    done
-    ray start \
-      --address=$RAY_ADDRESS \
-      --node-ip-address=\$local_ip \
-      --num-cpus=$CPUS_PER_NODE \
-      --num-gpus=$GPUS_PER_NODE \
-      --disable-usage-stats \
-      --block
+  echo "Slurm mode is not supported by this local launcher path. Set LOCAL_EXECUTION=true for GB10."
+  exit 1
 fi
-" &
 
 ########################################
 # 6. Wait for Ray
+
 ########################################
 sleep 60
 ray status || { echo "Ray failed to start"; exit 1; }
