@@ -135,8 +135,10 @@ for framework in "${FRAMEWORKS[@]}"; do
             else
               DEPENDENCY=""
             fi
-	    export TMP_DIR=$SCRATCH/TMP
-	    echo "Submit job..."
+            TMP_BASE="${SCRATCH:-${TMPDIR:-/tmp}}"
+            export TMP_DIR="${TMP_BASE}/TMP"
+            mkdir -p "$TMP_DIR"
+            echo "Submit job..."
             JOB_ID=$(sbatch --parsable \
             --chdir="$(pwd)" \
             --nodes=$NODES \
