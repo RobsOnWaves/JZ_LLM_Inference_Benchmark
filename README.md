@@ -23,7 +23,8 @@ If you are using the code directly with the datasets and models in the `DSDIR` f
 
 ## Step 3: Run the Benchmark
 - Execute the `run_benchmark.sh` script.  
-- Select the GPU type (`A100env` or `H100env`) where the benchmark will run.
+- Select the environment file where the benchmark will run (`configs/a100env`, `configs/h100env`, or `configs/gb10env`).
+- Example for Dell GB10: `bash run_benchmark.sh configs/gb10env`.
 
 ## Step 4: Generate Results Table
 - After the benchmark finishes, run `generateSummaryTable-checkpoint.py` to convert the raw outputs into an Excel table.
@@ -36,3 +37,8 @@ Benchmark results are shown in the image below:
 
 ![Benchmark Results](results_bench.png)
 
+
+
+### Dell GB10 quick setup
+- Copy and edit `configs/gb10env` for your machine (paths, scheduler/account fields, CPUs, memory).
+- Launch with `bash run_benchmark.sh configs/gb10env`.
