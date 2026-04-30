@@ -144,7 +144,20 @@ for framework in "${FRAMEWORKS[@]}"; do
             if [[ "$LOCAL_EXECUTION" == "true" ]] || ! command -v sbatch >/dev/null 2>&1; then
               echo "Running in local mode (no Slurm submission)."
               JOB_ID="local-${framework}-${dataset}-$(basename "$model")-run-${run_id}"
-              bash "$FILE_NAME" > run-local.out 2>&1
+              {
+                echo "[INFO] Starting local launcher: $(date -Iseconds)"
+                echo "[INFO] Launch folder: $LAUNCH_FOLDER"
+                echo "[INFO] Model path: $MODEL_PATH"
+              } > run-local.out
+              set +e
+              bash "$FILE_NAME" >> run-local.out 2>&1
+              LOCAL_RC=$?
+              set -e
+              if [ "$LOCAL_RC" -ne 0 ]; then
+                echo "Local launcher failed (exit code $LOCAL_RC): $LAUNCH_FOLDER/run-local.out"
+                tail -n 50 run-local.out || true
+                exit "$LOCAL_RC"
+              fi
             else
               JOB_ID=$(sbatch --parsable \
             --chdir="$(pwd)" \
