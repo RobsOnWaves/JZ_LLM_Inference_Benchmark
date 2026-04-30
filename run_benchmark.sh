@@ -16,6 +16,8 @@ set +a  # Stop automatically exporting
 # Load utility functions
 source scripts/utils.sh
 
+LOCAL_EXECUTION="${LOCAL_EXECUTION:-false}"
+
 #######################################################
 # ENVIRONMENT VARIABLES TO CHANGE
 #######################################################
@@ -139,7 +141,12 @@ for framework in "${FRAMEWORKS[@]}"; do
             export TMP_DIR="${TMP_BASE}/TMP"
             mkdir -p "$TMP_DIR"
             echo "Submit job..."
-            JOB_ID=$(sbatch --parsable \
+            if [[ "$LOCAL_EXECUTION" == "true" ]] || ! command -v sbatch >/dev/null 2>&1; then
+              echo "Running in local mode (no Slurm submission)."
+              JOB_ID="local-${framework}-${dataset}-$(basename "$model")-run-${run_id}"
+              bash "$FILE_NAME" > run-local.out 2>&1
+            else
+              JOB_ID=$(sbatch --parsable \
             --chdir="$(pwd)" \
             --nodes=$NODES \
             --cpus-per-task=$CPUS_PER_NODE \
@@ -154,6 +161,7 @@ for framework in "${FRAMEWORKS[@]}"; do
             --time=$TIME_LIMIT \
             --exclusive \
             $FILE_NAME)
+            fi
 
             echo "Submitted job $JOB_ID for $LAUNCH_FOLDER"
             JOB_IDS+=("$JOB_ID")

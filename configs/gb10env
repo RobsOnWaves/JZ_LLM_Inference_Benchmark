@@ -25,3 +25,6 @@ TIME_LIMIT=2:00:00
 GPUS_PER_NODE=1
 CPUS_PER_NODE=20
 VRAM_PER_NODE=128  # Total usable memory in GB on the node
+
+# Set to true to run without Slurm (direct local execution).
+LOCAL_EXECUTION=true
