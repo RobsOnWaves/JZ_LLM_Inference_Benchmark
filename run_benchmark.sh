@@ -23,7 +23,13 @@ LOCAL_EXECUTION="${LOCAL_EXECUTION:-false}"
 #######################################################
 FRAMEWORKS=( "vllm" )
 DATASETS=(  "sharegpt" "sonnet")  # "sharegpt"
-MODELS=("meta-llama/Llama-3.1-8B-Instruct" "meta-llama/Llama-3.1-70B-Instruct" "meta-llama/Llama-3.1-405B-Instruct" ) # "meta-llama/Llama-3.1-405B-Instruct" "meta-llama/Llama-3.1-70B-Instruct"
+MODELS=(
+  "meta-llama/Llama-3.1-8B-Instruct"
+  "google/gemma-3-12b-it"
+  "Qwen/Qwen2.5-14B-Instruct"
+  "mistralai/Mistral-Small-3.2-24B-Instruct-2506"
+  "Qwen/Qwen2.5-32B-Instruct"
+)
 NUMBER_OF_NODES=(4) #You can let 4 Since DP is not working code will regulate number of nodes to use only the right number
 REPEATS=3               # Number of runs per configuration
 #######################################################
@@ -53,6 +59,9 @@ for framework in "${FRAMEWORKS[@]}"; do
         # Define a unique MODEL_PATH per configuration
         MODEL_TYPE=$(get_model_type "$model" "configs/model_type_map.json")
         MODEL_DIRECTORY=$(get_model_directory "$MODEL_TYPE" "configs/model_type_directories_map.json")
+        if [[ -n "$MODEL_DIRECTORY" && "$MODEL_DIRECTORY" != /* ]]; then
+          MODEL_DIRECTORY="${CURRENT_DIR}/${MODEL_DIRECTORY}"
+        fi
         MODEL_PATH="${MODEL_DIRECTORY}/${model}"
         RAY_PATH="/tmp"
         mkdir -p "$RAY_PATH"
@@ -64,6 +73,9 @@ for framework in "${FRAMEWORKS[@]}"; do
 
 
         DATASET_PATH=$(get_dataset_path "$dataset" "configs/config_datasets_paths_map.json")
+        if [[ -n "$DATASET_PATH" && "$DATASET_PATH" != /* ]]; then
+          DATASET_PATH="${CURRENT_DIR}/${DATASET_PATH}"
+        fi
 
         # Extract param count in billions (e.g., 13B → 13)
         param_b=$(basename "$model" | grep -Po '[0-9]+(?=[Bb])')
@@ -119,6 +131,12 @@ for framework in "${FRAMEWORKS[@]}"; do
 
           for (( run_id=1; run_id<=REPEATS; run_id++ )); do
             LAUNCH_FOLDER="${CURRENT_DIR}/${FULL_FOLDER}/launch-${run_id}"
+            if grep -q "All concurrency runs completed successfully." "$LAUNCH_FOLDER/run-local.out" 2>/dev/null; then
+              echo "Skipping completed launch: $LAUNCH_FOLDER"
+              ((++CONFIG_INDEX))
+              continue
+            fi
+
             echo "Setting up $LAUNCH_FOLDER"
             mkdir -p "$LAUNCH_FOLDER"
              
@@ -178,7 +196,7 @@ for framework in "${FRAMEWORKS[@]}"; do
 
             echo "Submitted job $JOB_ID for $LAUNCH_FOLDER"
             JOB_IDS+=("$JOB_ID")
-            ((CONFIG_INDEX++))
+            ((++CONFIG_INDEX))
 
             cd - > /dev/null
             sleep 5

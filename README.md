@@ -1,44 +1,113 @@
-# Benchmark Instructions
+# LLM Inference Benchmark
 
-## Notes
-If you are using the code directly with the datasets and models in the `DSDIR` folder, steps 1 can be skipped.
+Benchmark launcher and report tooling for vLLM inference runs on Slurm clusters and a local Dell GB10 workstation.
 
-## Step 1: Download Datasets and Models
+## Setup
 
-**Datasets (into `benchmarks/datasets`):**  
-- [ShareGPT_V3_unfiltered_cleaned_split](https://huggingface.co/datasets/anon8231489123/ShareGPT_Vicuna_unfiltered/blob/main/ShareGPT_V3_unfiltered_cleaned_split.json)  
-- [Sonnet](https://huggingface.co/datasets/zhyncs/sonnet)  
+Create or activate an environment with vLLM, Ray, datasets, pandas, and matplotlib installed. On the GB10 setup used here:
 
-**Models (into `benchmarks/models`):**  
-- [LLaMA 3.1 8B Instruct](https://huggingface.co/meta-llama/Llama-3.1-8B-Instruct)  
-- [LLaMA 3.1 70B Instruct](https://huggingface.co/meta-llama/Llama-3.1-70B-Instruct)  
-- [LLaMA 3.1 405B Instruct](https://huggingface.co/meta-llama/Llama-3.1-405B-Instruct)  
+```bash
+conda activate vllm
+```
 
-## Step 2: Configuration
-- Update the paths in the files inside the `config` folder:  
-  - `config_datasets_paths_map`  
-  - `model_type_directories_map`  
-  - `model_type_map.json`  
-- Also update the information in `A100env` and `H100env` to match the user account number.
+Update the environment file for the target machine:
 
-## Step 3: Run the Benchmark
-- Execute the `run_benchmark.sh` script.  
-- Select the environment file where the benchmark will run (`configs/a100env`, `configs/h100env`, or `configs/gb10env`).
-- Example for Dell GB10: `bash run_benchmark.sh configs/gb10env`.
+- `configs/a100env`
+- `configs/h100env`
+- `configs/gb10env`
 
-## Step 4: Generate Results Table
-- After the benchmark finishes, run `generateSummaryTable-checkpoint.py` to convert the raw outputs into an Excel table.
+Also update local dataset/model roots in:
 
-## Step 5 (Optional): Analyze Results
-- Use `bench_analysis.ipynb` to interpret the generated Excel file.
+- `configs/config_datasets_paths_map.json`
+- `configs/model_type_directories_map.json`
+- `configs/model_type_map.json`
 
-## Benchmark Results
-Benchmark results are shown in the image below:
+## Datasets
 
-![Benchmark Results](results_bench.png)
+Place datasets under `benchmarks/datasets` or update `configs/config_datasets_paths_map.json`.
 
+- [ShareGPT_V3_unfiltered_cleaned_split](https://huggingface.co/datasets/anon8231489123/ShareGPT_Vicuna_unfiltered/blob/main/ShareGPT_V3_unfiltered_cleaned_split.json)
+- [Sonnet](https://huggingface.co/datasets/zhyncs/sonnet)
 
+## GB10 Model Set
 
-### Dell GB10 quick setup
-- Copy and edit `configs/gb10env` for your machine (paths, scheduler/account fields, CPUs, memory).
-- Launch with `bash run_benchmark.sh configs/gb10env`.
+The default `run_benchmark.sh` model list is sized for one Dell GB10 and covers small to upper-range local inference:
+
+- `meta-llama/Llama-3.1-8B-Instruct`
+- `google/gemma-3-12b-it`
+- `Qwen/Qwen2.5-14B-Instruct`
+- `mistralai/Mistral-Small-3.2-24B-Instruct-2506`
+- `Qwen/Qwen2.5-32B-Instruct`
+
+Download them into `benchmarks/models`:
+
+```bash
+python - <<'PY'
+from huggingface_hub import snapshot_download
+
+models = [
+    "meta-llama/Llama-3.1-8B-Instruct",
+    "google/gemma-3-12b-it",
+    "Qwen/Qwen2.5-14B-Instruct",
+    "mistralai/Mistral-Small-3.2-24B-Instruct-2506",
+    "Qwen/Qwen2.5-32B-Instruct",
+]
+
+for model in models:
+    local_dir = "benchmarks/models/" + model
+    snapshot_download(repo_id=model, local_dir=local_dir, local_dir_use_symlinks=False)
+    print("Downloaded:", model, "->", local_dir)
+PY
+```
+
+Llama 3.1 70B and 405B are not part of the GB10 default run. The 70B BF16 checkpoint is not practical on a single GB10, and 405B is out of range.
+
+## Running
+
+Run directly:
+
+```bash
+bash run_benchmark.sh configs/gb10env
+```
+
+Or keep it running after logout:
+
+```bash
+nohup bash run_benchmark.sh configs/gb10env > ~/logbench 2>&1 &
+```
+
+Follow the parent launcher:
+
+```bash
+tail -f ~/logbench
+```
+
+Follow the active local vLLM launcher:
+
+```bash
+tail -f results/vllm/sharegpt/Llama-3.1-8B-Instruct/Nodes_1-GPUs_1-TP_1-PP_1/launch-1/run-local.out
+```
+
+The launcher skips a completed `launch-*` folder when its `run-local.out` contains `All concurrency runs completed successfully.`. This makes interrupted GB10 runs resumable without rerunning completed launches.
+
+`REPEATS` in `run_benchmark.sh` controls how many times each exact model/dataset configuration is rerun. Use `REPEATS=1` for quick exploration and `REPEATS=3` for more stable benchmark numbers.
+
+## Reports
+
+Generate the summary CSV:
+
+```bash
+python generateSummaryTable-checkpoint.py configs/gb10env
+```
+
+Generate PNG plots:
+
+```bash
+python generatePlots.py "results/full_benchmark_summary_Dell GB10_gpu.csv"
+```
+
+On GB10, `nvidia-smi` may report `N/A` for `memory.used`. The summary script leaves GPU memory blank when unsupported but still averages power metrics and benchmark throughput.
+
+## Existing Notebook
+
+`bench_analysis.ipynb` is still available for older report workflows. For GB10 runs, prefer `generateSummaryTable-checkpoint.py` plus `generatePlots.py`.

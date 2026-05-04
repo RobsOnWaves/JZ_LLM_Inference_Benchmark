@@ -3,5 +3,8 @@
     "meta-llama/Llama-3.1-70B-Instruct": "Text Generation",
     "meta-llama/Llama-3.1-405B-Instruct": "Text Generation",
     "google/gemma-3-12b-it": "Text Generation",
-    "mistralai/Mistral-7B-Instruct-v0.3": "Text Generation"
+    "Qwen/Qwen2.5-14B-Instruct": "Text Generation",
+    "mistralai/Mistral-7B-Instruct-v0.3": "Text Generation",
+    "mistralai/Mistral-Small-3.2-24B-Instruct-2506": "Text Generation",
+    "Qwen/Qwen2.5-32B-Instruct": "Text Generation"
 }

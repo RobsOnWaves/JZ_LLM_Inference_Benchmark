@@ -1,4 +1,4 @@
 {
-  "sharegpt": "/lustre/fsmisc/dataset/HuggingFace/anon8231489123/ShareGPT_Vicuna_unfiltered/ShareGPT_V3_unfiltered_cleaned_split.json",
-  "sonnet": "/lustre/fsmisc/dataset/HuggingFace/zhyncs/sonnet/sonnet.txt"
+  "sharegpt": "benchmarks/datasets/ShareGPT_V3_unfiltered_cleaned_split.json",
+  "sonnet": "benchmarks/datasets/sonnet.txt"
 }

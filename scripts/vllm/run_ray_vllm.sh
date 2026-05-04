@@ -1,7 +1,16 @@
 #!/bin/bash
 
 set -euo pipefail
+
+cleanup() {
+  if [ -n "${VLLM_PID:-}" ] && kill -0 "$VLLM_PID" >/dev/null 2>&1; then
+    kill "$VLLM_PID" >/dev/null 2>&1 || true
+  fi
+  ray stop --force >/dev/null 2>&1 || true
+}
+
 trap 'echo "[ERROR] run_ray_vllm.sh failed at line $LINENO" >&2' ERR
+trap cleanup EXIT INT TERM
 
 ########################################
 # 1. Environment
@@ -19,11 +28,18 @@ if [ -n "${ENVIRONMENT_VLLM:-}" ]; then
   if [ -f "$ENVIRONMENT_VLLM/bin/activate" ]; then
     # shellcheck disable=SC1090
     source "$ENVIRONMENT_VLLM/bin/activate"
+  elif [ -n "${CONDA_PATH:-}" ] && [ -f "$CONDA_PATH" ]; then
+    # shellcheck disable=SC1090
+    source "$CONDA_PATH"
+    conda activate "$ENVIRONMENT_VLLM"
+  else
+    echo "[WARN] ENVIRONMENT_VLLM is set but no activate script was found: $ENVIRONMENT_VLLM" >&2
   fi
 fi
 
 if ! command -v ray >/dev/null 2>&1; then
-  echo "ERROR: `ray` command not found. Activate the vLLM environment or set ENVIRONMENT_VLLM correctly." >&2
+  echo "ERROR: ray command not found. Active python: $(command -v python || echo unavailable)" >&2
+  echo "Install Ray in ENVIRONMENT_VLLM or set ENVIRONMENT_VLLM to the environment that contains ray." >&2
   exit 1
 fi
 
@@ -48,6 +64,18 @@ export VLLM_USE_RAY_COMPILED_DAG=0
 export RAY_CGRAPH_get_timeout=1800
 NB_NODES=$NODES
 LOCAL_MODE="${LOCAL_EXECUTION:-false}"
+
+if [[ "$LOCAL_MODE" == "true" ]]; then
+  # GB10 has unified CPU/GPU memory. vLLM can legitimately push node memory
+  # above Ray's worker-kill threshold because GPU allocations are accounted as
+  # node memory. Disable Ray's memory killer locally and leave headroom in vLLM.
+  export RAY_memory_monitor_refresh_ms="${RAY_memory_monitor_refresh_ms:-0}"
+  export RAY_memory_usage_threshold="${RAY_memory_usage_threshold:-0.999}"
+  RAY_OBJECT_STORE_MEMORY_BYTES="${RAY_OBJECT_STORE_MEMORY_BYTES:-1073741824}"
+  VLLM_GPU_MEMORY_UTILIZATION="${VLLM_GPU_MEMORY_UTILIZATION:-0.85}"
+else
+  VLLM_GPU_MEMORY_UTILIZATION="${VLLM_GPU_MEMORY_UTILIZATION:-0.92}"
+fi
 
 ########################################
 # 2. Robust InfiniBand detection (IPv4 only)
@@ -87,7 +115,13 @@ export NCCL_P2P_DISABLE=0
 
 if [[ "$LOCAL_MODE" == "true" ]]; then
   head_node=$(hostname)
-  head_node_ip="127.0.0.1"
+  head_node_ip=$(hostname -I | awk '{print $1}')
+  if [ -z "$head_node_ip" ]; then
+    head_node_ip=$(ip -4 route get 1.1.1.1 | awk '{for (i=1; i<=NF; i++) if ($i == "src") {print $(i+1); exit}}')
+  fi
+  if [ -z "$head_node_ip" ]; then
+    head_node_ip="127.0.0.1"
+  fi
   export RAY_HEAD_IP="$head_node_ip"
   export RAY_ADDRESS="$RAY_HEAD_IP:6379"
 else
@@ -117,6 +151,7 @@ if [[ "$LOCAL_MODE" == "true" ]]; then
     --port=6379 \
     --num-cpus=$CPUS_PER_NODE \
     --num-gpus=$GPUS_PER_NODE \
+    --object-store-memory="$RAY_OBJECT_STORE_MEMORY_BYTES" \
     --disable-usage-stats \
     --block &
 else
@@ -152,6 +187,7 @@ python -u -m vllm.entrypoints.openai.api_server \
   --distributed-executor-backend ray \
   --disable-custom-all-reduce \
   --dtype bfloat16 \
+  --gpu-memory-utilization "$VLLM_GPU_MEMORY_UTILIZATION" \
   --max-model-len 8192 \
   --host "$RAY_HEAD_IP" \
   --port $PORT \
@@ -163,14 +199,17 @@ VLLM_PID=$!
 echo "Waiting for vLLM to initialize weights (Model: 405B)..."
 
 # Use /v1/models instead of /health for a stricter readiness check
-timeout 1800 bash -c "
-until [ \"\$(curl -s -o /dev/null -w ''%{http_code}'' http://$RAY_HEAD_IP:8000/v1/models)\" == \"200\" ]; do
-    echo \"Still loading weights...\"
+timeout 1800 bash -c '
+until [ "$(curl -s -o /dev/null -w "%{http_code}" "http://'"$RAY_HEAD_IP"':8000/v1/models")" = "200" ]; do
+    if ! kill -0 "$1" >/dev/null 2>&1; then
+        echo "vLLM server process exited before becoming ready"
+        exit 1
+    fi
+    echo "Still loading weights..."
     sleep 20
 done
-" || {
+' _ "$VLLM_PID" || {
   echo "vLLM server failed to become ready within 30 minutes"
-  kill $VLLM_PID
   exit 1
 }
 
