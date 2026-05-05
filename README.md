@@ -2,6 +2,9 @@
 
 Benchmark launcher and report tooling for vLLM inference runs on Slurm clusters and a local Dell GB10 workstation.
 
+For a deeper explanation of the project structure and benchmark concepts, see
+[`ARCHITECTURE.md`](ARCHITECTURE.md).
+
 ## Setup
 
 Create or activate an environment with vLLM, Ray, datasets, pandas, and matplotlib installed. On the GB10 setup used here:

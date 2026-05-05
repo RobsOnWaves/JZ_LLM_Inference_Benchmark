@@ -11,6 +11,18 @@ def extract_model_size(model_name):
     return match.group(1) if match else str(model_name)
 
 
+def short_model_name(model_name):
+    name = str(model_name)
+    replacements = {
+        "Llama-3.1-8B-Instruct": "Llama 3.1 8B",
+        "gemma-3-12b-it": "Gemma 3 12B",
+        "Qwen2.5-14B-Instruct": "Qwen 2.5 14B",
+        "Mistral-Small-3.2-24B-Instruct-2506": "Mistral Small 3.2 24B",
+        "Qwen2.5-32B-Instruct": "Qwen 2.5 32B",
+    }
+    return replacements.get(name, name)
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Generate benchmark PNG plots from a summary CSV."
@@ -65,14 +77,22 @@ def main():
     df = df[df["Output Throughput (tokens/s)"] > 0].copy()
     df["ModelSize"] = df["Model"].map(extract_model_size)
 
+    color_cycle = [
+        "tab:blue",
+        "tab:orange",
+        "tab:green",
+        "tab:red",
+        "tab:purple",
+        "tab:brown",
+        "tab:pink",
+        "tab:gray",
+        "tab:olive",
+        "tab:cyan",
+    ]
+    models = sorted(df["Model"].dropna().unique(), key=short_model_name)
     color_map = {
-        "8B": "tab:blue",
-        "12B": "tab:green",
-        "14B": "tab:orange",
-        "24B": "tab:purple",
-        "32B": "tab:red",
-        "70B": "tab:brown",
-        "405B": "tab:pink",
+        model: color_cycle[index % len(color_cycle)]
+        for index, model in enumerate(models)
     }
 
     for dataset_name, dataset_df in df.groupby("Dataset"):
@@ -82,14 +102,28 @@ def main():
         ):
             group = group.sort_values("Concurrency Level")
             model_size = extract_model_size(model)
-            label = f"{supercomputer} - {model_size}"
+            model_label = short_model_name(model)
+            label = f"{supercomputer} - {model_label}"
             ax.plot(
                 group["Concurrency Level"],
                 group["Output Throughput (tokens/s)"],
                 marker="o",
                 linewidth=2,
-                color=color_map.get(model_size),
+                color=color_map.get(model),
                 label=label,
+            )
+            last = group.iloc[-1]
+            ax.annotate(
+                model_label,
+                (
+                    last["Concurrency Level"],
+                    last["Output Throughput (tokens/s)"],
+                ),
+                xytext=(8, 0),
+                textcoords="offset points",
+                va="center",
+                fontsize=8,
+                color=color_map.get(model),
             )
 
         ax.set_xlabel("Concurrency")
@@ -121,12 +155,12 @@ def main():
                     row["Output Throughput (tokens/s)"],
                     row["Joule per Token (J/token)"],
                     s=90,
-                    color=color_map.get(model_size),
+                    color=color_map.get(row["Model"]),
                     edgecolors="black",
-                    label=f"{row['Supercomputer']} - {model_size}",
+                    label=f"{row['Supercomputer']} - {short_model_name(row['Model'])}",
                 )
                 ax.annotate(
-                    row["Supercomputer"],
+                    short_model_name(row["Model"]),
                     (row["Output Throughput (tokens/s)"], row["Joule per Token (J/token)"]),
                     xytext=(8, 4),
                     textcoords="offset points",

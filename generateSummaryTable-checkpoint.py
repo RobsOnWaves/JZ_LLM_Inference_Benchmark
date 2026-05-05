@@ -142,8 +142,25 @@ def parse_gpu_metrics_csv(csv_path):
 
 # Stores: {(framework, dataset, model, total_gpus, concurrency): [metrics_dicts]}
 data_index = {}
+complete_launch_cache = {}
+
+def is_complete_launch(root):
+    if root not in complete_launch_cache:
+        run_log = os.path.join(root, "run-local.out")
+        complete = False
+        try:
+            with open(run_log) as f:
+                complete = "All concurrency runs completed successfully." in f.read()
+        except FileNotFoundError:
+            complete = False
+        complete_launch_cache[root] = complete
+    return complete_launch_cache[root]
 
 for root, dirs, files in os.walk(BASE_DIR_RESULTS):
+    if any(file.startswith("Concurrency_") and file.endswith(".json") for file in files):
+        if not is_complete_launch(root):
+            continue
+
     for file in files:
         if not file.startswith("Concurrency_") or not file.endswith(".json"):
             continue
